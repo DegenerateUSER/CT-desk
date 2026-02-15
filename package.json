@@ -1,0 +1,30 @@
+{
+  "name": "cheaptricks-desktop",
+  "version": "1.0.0",
+  "description": "CheapTricks Desktop — Offline video streaming with mpv",
+  "main": "main/main.js",
+  "author": "CheapTricks",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "build:renderer": "cd renderer && npm run build",
+    "build:electron": "electron-builder --config electron-builder.yml",
+    "build:win": "npm run build:renderer && electron-builder --config electron-builder.yml --win",
+    "build:mac": "npm run build:renderer && electron-builder --config electron-builder.yml --mac",
+    "build:all": "npm run build:renderer && electron-builder --config electron-builder.yml --win --mac",
+    "postinstall": "cd renderer && npm install",
+    "copy-ui": "bash scripts/copy-ui.sh",
+    "clean": "rm -rf dist renderer/out renderer/.next"
+  },
+  "dependencies": {
+    "electron-store": "^8.1.0",
+    "koffi": "^2.15.1"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "ws": "^8.19.0"
+  }
+}
