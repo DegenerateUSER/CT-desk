@@ -17,13 +17,14 @@ const { getResourcePath, isPackaged } = require('../utils/paths');
 
 function getLibmpvPath() {
   if (isPackaged()) {
+    // electron-builder copies resources/${os}/mpv/* → process.resourcesPath/mpv/
     const platform = process.platform;
     if (platform === 'darwin') {
-      return getResourcePath('mac', 'mpv', 'libmpv.2.dylib');
+      return getResourcePath('mpv', 'libmpv.2.dylib');
     } else if (platform === 'win32') {
-      return getResourcePath('win', 'mpv', 'mpv-2.dll');
+      return getResourcePath('mpv', 'mpv-2.dll');
     } else {
-      return getResourcePath('linux', 'mpv', 'libmpv.so.2');
+      return getResourcePath('mpv', 'libmpv.so.2');
     }
   }
 

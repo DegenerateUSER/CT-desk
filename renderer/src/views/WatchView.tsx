@@ -6,7 +6,7 @@ import MpvPlayer from "@/components/MpvPlayer";
 import { videoApi } from "@/lib/api";
 import { formatBytes, formatDate, getFileExtension } from "@/lib/utils";
 import { useUserAuth } from "@/lib/auth";
-import { isElectron, mpv } from "@/lib/electron";
+import { isElectron, mpv, electronShell } from "@/lib/electron";
 import {
   ArrowLeft,
   Home,
@@ -68,6 +68,7 @@ export default function WatchView() {
   const [httpHeaders, setHttpHeaders] = useState<string[]>([]);
   const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isTheater, setIsTheater] = useState(false);
 
   // ── Subscribe to fullscreen state changes from main process ──────────────
   useEffect(() => {
@@ -215,9 +216,9 @@ export default function WatchView() {
   const ext = getFileExtension(video.name);
 
   return (
-    <div className={isFullscreen ? "h-screen w-screen bg-black overflow-hidden" : "min-h-screen bg-background text-foreground"}>
+    <div className={isFullscreen ? "h-screen w-screen bg-black overflow-hidden" : isTheater ? "h-screen w-screen bg-black overflow-hidden" : "min-h-screen bg-background text-foreground"}>
       {/* Header — hidden in fullscreen */}
-      <header className={`${isFullscreen ? "hidden" : ""} sticky top-0 z-50 bg-background border-b-4 border-border shadow-[0_4px_0_0_rgba(0,0,0,0.5)]`}>
+      <header className={`${isFullscreen || isTheater ? "hidden" : ""} sticky top-0 z-50 bg-background border-b-4 border-border shadow-[0_4px_0_0_rgba(0,0,0,0.5)]`}>
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
@@ -274,26 +275,28 @@ export default function WatchView() {
         </div>
       </header>
 
-      <main className={isFullscreen ? "h-full" : "max-w-[1600px] mx-auto px-4 sm:px-6 py-8"}>
-        <div className={isFullscreen ? "h-full" : "grid grid-cols-1 lg:grid-cols-3 gap-8"}>
-          {/* Video Player (2/3) */}
-          <div className={isFullscreen ? "h-full" : "lg:col-span-2 space-y-6"}>
-            {/* Retro Monitor Frame — stripped in fullscreen */}
-            <div className={isFullscreen ? "h-full" : "bg-foreground p-1 sm:p-2 rounded-lg shadow-[8px_8px_0_0_rgba(0,0,0,0.3)]"}>
-              <div className={isFullscreen ? "h-full" : "bg-black border-4 border-gray-700 rounded-sm overflow-hidden relative"}>
+      <main className={isFullscreen ? "h-full" : isTheater ? "h-full w-full" : "max-w-[1600px] mx-auto px-4 sm:px-6 py-8"}>
+        <div className={isFullscreen ? "h-full" : isTheater ? "h-full w-full" : "grid grid-cols-1 lg:grid-cols-3 gap-8"}>
+          {/* Video Player */}
+          <div className={isFullscreen ? "h-full" : isTheater ? "h-full w-full" : "lg:col-span-2 space-y-6"}>
+            {/* Retro Monitor Frame — stripped in fullscreen & theater */}
+            <div className={isFullscreen || isTheater ? "h-full w-full" : "bg-foreground p-1 sm:p-2 rounded-lg shadow-[8px_8px_0_0_rgba(0,0,0,0.3)]"}>
+              <div className={isFullscreen || isTheater ? "h-full w-full" : "bg-black border-4 border-gray-700 rounded-sm overflow-hidden relative"}>
                 <MpvPlayer
                   src={streamUrl}
                   title={video.name}
                   isFullscreen={isFullscreen}
+                  isTheater={isTheater}
                   httpHeaders={httpHeaders}
                   tokenExpiresAt={tokenExpiresAt}
                   onTokenRefresh={handleTokenRefresh}
+                  onTheaterToggle={() => setIsTheater((prev) => !prev)}
                 />
               </div>
             </div>
 
             {/* Video title & meta — hidden in fullscreen */}
-            {!isFullscreen && (<>
+            {!isFullscreen && !isTheater && (<>
             <Card className="border-4 border-primary shadow-[8px_8px_0_0_var(--primary)]">
               <CardContent className="p-4 sm:p-6">
                 <h1 className="text-lg sm:text-xl font-bold uppercase leading-tight mb-4 break-all">
@@ -396,10 +399,14 @@ export default function WatchView() {
                           <Button
                             variant="outline"
                             className="w-full border-2 border-dashed font-bold uppercase"
-                            onClick={() =>
-                              video.web_view_link &&
-                              window.open(video.web_view_link, "_blank")
-                            }
+                            onClick={() => {
+                              if (!video.web_view_link) return;
+                              if (isElectron()) {
+                                electronShell.openExternal(video.web_view_link);
+                              } else {
+                                window.open(video.web_view_link, "_blank");
+                              }
+                            }}
                           >
                             <Globe className="w-4 h-4 mr-2" /> Open in Google
                             Drive
@@ -449,8 +456,8 @@ export default function WatchView() {
             </>)}
           </div>
 
-          {/* Sidebar (1/3) — hidden in fullscreen */}
-          {!isFullscreen && (
+          {/* Sidebar (1/3) — hidden in fullscreen & theater */}
+          {!isFullscreen && !isTheater && (
           <div className="lg:col-span-1 border-l-4 border-dashed border-border pl-0 lg:pl-6 pt-6 lg:pt-0">
             <div className="sticky top-24 space-y-6">
               {/* Quick actions */}
@@ -465,10 +472,14 @@ export default function WatchView() {
                     <Button
                       variant="outline"
                       className="w-full justify-start border-2 font-bold uppercase"
-                      onClick={() =>
-                        video.web_view_link &&
-                        window.open(video.web_view_link, "_blank")
-                      }
+                      onClick={() => {
+                        if (!video.web_view_link) return;
+                        if (isElectron()) {
+                          electronShell.openExternal(video.web_view_link);
+                        } else {
+                          window.open(video.web_view_link, "_blank");
+                        }
+                      }}
                     >
                       <Globe className="w-4 h-4 mr-2" /> Open Drive
                     </Button>
@@ -534,6 +545,7 @@ export default function WatchView() {
                   {[
                     ["Space / K", "Play / Pause"],
                     ["F", "Fullscreen"],
+                    ["T", "Theater Mode"],
                     ["M", "Mute"],
                     ["← / →", "Seek ±10s"],
                     ["↑ / ↓", "Volume"],

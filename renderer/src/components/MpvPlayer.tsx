@@ -23,6 +23,8 @@ import {
   ChevronRight,
   AlertTriangle,
   RefreshCw,
+  RectangleHorizontal,
+  Columns2,
 } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import { mpv, isElectron, MpvStatus, MpvTrack } from '@/lib/electron';
@@ -31,17 +33,19 @@ interface MpvPlayerProps {
   src: string;
   title: string;
   isFullscreen?: boolean;
+  isTheater?: boolean;
   httpHeaders?: string[];
   /** Epoch ms when the auth token expires (used for direct stream) */
   tokenExpiresAt?: number | null;
   /** Called when the player needs a fresh token (re-fetch direct URL) */
   onTokenRefresh?: () => void;
+  onTheaterToggle?: () => void;
   onEnded?: () => void;
 }
 
 type SettingsPage = null | 'main' | 'audio' | 'subtitles' | 'speed';
 
-export default function MpvPlayer({ src, title, isFullscreen = false, httpHeaders, tokenExpiresAt, onTokenRefresh, onEnded }: MpvPlayerProps) {
+export default function MpvPlayer({ src, title, isFullscreen = false, isTheater = false, httpHeaders, tokenExpiresAt, onTokenRefresh, onTheaterToggle, onEnded }: MpvPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -76,6 +80,7 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
   const paintFrame = useCallback(() => {
     const frame = pendingFrameRef.current;
     const canvas = canvasRef.current;
+    const container = containerRef.current;
     if (!frame || !canvas) {
       animFrameRef.current = requestAnimationFrame(paintFrame);
       return;
@@ -83,23 +88,58 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
 
     pendingFrameRef.current = null;
 
-    if (canvas.width !== frame.width || canvas.height !== frame.height) {
-      canvas.width = frame.width;
-      canvas.height = frame.height;
-    }
-
     const ctx = canvas.getContext('2d', { alpha: false });
     if (!ctx) {
       animFrameRef.current = requestAnimationFrame(paintFrame);
       return;
     }
 
-    const pixels = new Uint8ClampedArray(frame.data);
-    const imageData = new ImageData(pixels, frame.width, frame.height);
-    ctx.putImageData(imageData, 0, 0);
+    // In theater/fullscreen: letterbox to fit container; otherwise stretch to fill
+    if ((isFullscreen || isTheater) && container) {
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+
+      // Set canvas to container size so it fills the space
+      if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw;
+        canvas.height = ch;
+      }
+
+      // Create an offscreen canvas with the frame data
+      const offscreen = new OffscreenCanvas(frame.width, frame.height);
+      const offCtx = offscreen.getContext('2d');
+      if (!offCtx) {
+        animFrameRef.current = requestAnimationFrame(paintFrame);
+        return;
+      }
+      const pixels = new Uint8ClampedArray(frame.data);
+      const imageData = new ImageData(pixels, frame.width, frame.height);
+      offCtx.putImageData(imageData, 0, 0);
+
+      // Calculate letterbox fit
+      const scale = Math.min(cw / frame.width, ch / frame.height);
+      const dw = frame.width * scale;
+      const dh = frame.height * scale;
+      const dx = (cw - dw) / 2;
+      const dy = (ch - dh) / 2;
+
+      // Clear to black (letterbox bars) and draw scaled frame
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.drawImage(offscreen, dx, dy, dw, dh);
+    } else {
+      // Normal mode: canvas matches frame exactly, CSS stretches to fit
+      if (canvas.width !== frame.width || canvas.height !== frame.height) {
+        canvas.width = frame.width;
+        canvas.height = frame.height;
+      }
+      const pixels = new Uint8ClampedArray(frame.data);
+      const imageData = new ImageData(pixels, frame.width, frame.height);
+      ctx.putImageData(imageData, 0, 0);
+    }
 
     animFrameRef.current = requestAnimationFrame(paintFrame);
-  }, []);
+  }, [isFullscreen, isTheater]);
 
   useEffect(() => {
     animFrameRef.current = requestAnimationFrame(paintFrame);
@@ -292,15 +332,19 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
     setSettingsPage((prev) => (prev ? null : 'main'));
   }, []);
 
-  // ── Auto-hide controls ──────────────────────────────────────────────────
+  // ── Auto-hide controls + cursor ─────────────────────────────────────────
+
+  const [cursorHidden, setCursorHidden] = useState(false);
 
   const showControlsTemporarily = useCallback(() => {
     setShowControls(true);
+    setCursorHidden(false);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying) {
         setShowControls(false);
         setSettingsPage(null);
+        setCursorHidden(true);
       }
     }, 3000);
   }, [isPlaying]);
@@ -362,12 +406,16 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
           e.preventDefault();
           toggleMute();
           break;
+        case 't':
+          e.preventDefault();
+          if (!isFullscreen && onTheaterToggle) onTheaterToggle();
+          break;
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [togglePlayPause, seekRelative, toggleFullscreen, toggleMute, settingsPage, isFullscreen]);
+  }, [togglePlayPause, seekRelative, toggleFullscreen, toggleMute, settingsPage, isFullscreen, onTheaterToggle]);
 
   // ── Not in Electron ──────────────────────────────────────────────────────
 
@@ -582,24 +630,31 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
       className={`bg-black group ${
         isFullscreen
           ? 'w-full h-full'
-          : 'relative aspect-video border-4 border-border'
+          : isTheater
+            ? 'relative w-full h-full'
+            : 'relative aspect-video border-4 border-border'
       }`}
+      style={{ cursor: cursorHidden ? 'none' : 'default' }}
       onMouseMove={showControlsTemporarily}
       onMouseLeave={() => {
-        if (isPlaying) setShowControls(false);
+        if (isPlaying) {
+          setShowControls(false);
+          setCursorHidden(true);
+        }
         setSettingsPage(null);
       }}
     >
       {/* Canvas for libmpv frame rendering */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-contain"
+        className="absolute inset-0 w-full h-full"
         style={{ imageRendering: 'auto' }}
       />
 
       {/* Clickable overlay for play/pause */}
       <div
-        className="absolute inset-0 cursor-pointer z-10"
+        className="absolute inset-0 z-10"
+        style={{ cursor: cursorHidden ? 'none' : 'pointer' }}
         onClick={togglePlayPause}
         onDoubleClick={toggleFullscreen}
       />
@@ -758,6 +813,21 @@ export default function MpvPlayer({ src, title, isFullscreen = false, httpHeader
             </button>
             {renderSettings()}
           </div>
+
+          {/* Theater mode */}
+          {!isFullscreen && onTheaterToggle && (
+            <button
+              onClick={onTheaterToggle}
+              className={`transition-colors ${isTheater ? 'text-primary' : 'text-white/70 hover:text-white'}`}
+              title={isTheater ? 'Default View (T)' : 'Theater Mode (T)'}
+            >
+              {isTheater ? (
+                <Columns2 className="w-4 h-4" />
+              ) : (
+                <RectangleHorizontal className="w-4 h-4" />
+              )}
+            </button>
+          )}
 
           {/* Fullscreen */}
           <button

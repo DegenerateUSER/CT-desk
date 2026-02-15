@@ -10,7 +10,7 @@ import {
   TorrentDetail,
   ActiveTorrent,
 } from "@/lib/api";
-import { formatBytes } from "@/lib/utils";
+import { formatBytes, parseSizeToBytes } from "@/lib/utils";
 import {
   Search,
   Loader2,
@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   Activity,
   User,
+  Timer,
 } from "lucide-react";
 
 // 8bit Components
@@ -55,6 +56,18 @@ import {
 } from "@/components/ui/8bit/dialog";
 
 type Category = "anime" | "movies";
+
+const MAX_TORRENT_BYTES = 90 * 1024 * 1024 * 1024; // 90 GB
+
+function formatDuration(seconds: number): string {
+  if (!isFinite(seconds) || seconds < 0) return "--";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 export default function SearchView() {
   const { isAuthenticated, isLoading: authLoading, user } = useUserAuth();
@@ -312,14 +325,24 @@ export default function SearchView() {
                   {activeTorrents.length}
                 </Badge>
               </div>
-              <Button
-                onClick={() => setShowActiveTorrents(false)}
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-              >
-                <X className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={() => navigate("downloads")}
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-xs px-2 font-bold uppercase border-2"
+                >
+                  View All
+                </Button>
+                <Button
+                  onClick={() => setShowActiveTorrents(false)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </CardHeader>
             <div className="divide-y-4 divide-border max-h-[320px] overflow-y-auto">
               {activeTorrents.map((t) => {
@@ -424,6 +447,18 @@ export default function SearchView() {
                             {formatBytes(t.downloaded)} /{" "}
                             {formatBytes(t.total_size)}
                           </span>
+                          {t.download_rate > 0 && t.total_size > 0 && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground uppercase font-mono">
+                              <Timer className="w-3 h-3 text-primary" />
+                              ETA {formatDuration((t.total_size - t.downloaded) / t.download_rate)}
+                            </span>
+                          )}
+                          {t.added_at && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground uppercase font-mono">
+                              <Clock className="w-3 h-3" />
+                              {formatDuration(Date.now() / 1000 - t.added_at)} elapsed
+                            </span>
+                          )}
                         </>
                       )}
                       {isUploading && (
@@ -497,6 +532,12 @@ export default function SearchView() {
               )}
             </Button>
           </div>
+
+          {/* 90GB size limit disclaimer */}
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-amber-600 uppercase font-bold">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>Max torrent size: 90 GB — larger torrents cannot be added</span>
+          </div>
         </div>
 
         {/* Error */}
@@ -554,6 +595,7 @@ export default function SearchView() {
                 const isAdded =
                   addedIds.has(id) && activeNames.has(torrent.name);
                 const addError = addErrors[id];
+                const tooLarge = parseSizeToBytes(torrent.size) > MAX_TORRENT_BYTES;
 
                 return (
                   <Card
@@ -617,6 +659,16 @@ export default function SearchView() {
                           >
                             <Check className="w-4 h-4 mr-1" /> Added
                           </Button>
+                        ) : tooLarge ? (
+                          <Button
+                            disabled
+                            variant="outline"
+                            size="sm"
+                            className="h-8 border-amber-500 text-amber-600 opacity-100 bg-amber-500/10 font-bold uppercase"
+                            title="Exceeds 90 GB limit"
+                          >
+                            <AlertTriangle className="w-4 h-4 mr-1" /> TOO BIG
+                          </Button>
                         ) : (
                           <Button
                             onClick={() => handleAddTorrent(torrent)}
@@ -678,9 +730,9 @@ export default function SearchView() {
         open={!!selectedTorrent}
         onOpenChange={(open) => !open && closeDetail()}
       >
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden p-0 gap-0 border-4 border-primary shadow-[12px_12px_0_0_rgba(0,0,0,0.5)] bg-card">
-          <DialogHeader className="p-4 border-b-4 border-border bg-muted/20">
-            <DialogTitle className="text-lg uppercase line-clamp-1 pr-8">
+        <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 border-4 border-primary shadow-[12px_12px_0_0_rgba(0,0,0,0.5)] bg-card">
+          <DialogHeader className="p-5 border-b-4 border-border bg-muted/20">
+            <DialogTitle className="text-lg uppercase leading-snug pr-8">
               {selectedTorrent?.name}
             </DialogTitle>
             <DialogDescription className="text-xs font-mono uppercase text-muted-foreground">
@@ -689,7 +741,7 @@ export default function SearchView() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {detailLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-10 h-10 text-primary animate-spin" />
@@ -754,15 +806,28 @@ export default function SearchView() {
                     <div className="text-xs font-bold uppercase text-primary border-b-2 border-primary inline-block">
                       Files ({torrentDetail.files.length})
                     </div>
-                    <div className="p-2 border-2 border-border bg-card max-h-[150px] overflow-y-auto">
-                      {torrentDetail.files.map((file, i) => (
-                        <div
-                          key={i}
-                          className="px-2 py-1 text-xs font-mono border-b border-border/50 last:border-0 truncate"
-                        >
-                          {file}
-                        </div>
-                      ))}
+                    <div className="border-2 border-border bg-card max-h-[250px] overflow-y-auto">
+                      {torrentDetail.files.map((file, i) => {
+                        const fname = typeof file === 'string' ? file : file.name;
+                        const fsize = typeof file === 'string' ? '' : file.size;
+                        return (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-4 px-3 py-1.5 border-b border-border/50 last:border-0 hover:bg-muted/20"
+                          >
+                            <div className="min-w-0 flex-1 overflow-x-auto scrollbar-thin">
+                              <span className="text-xs font-mono whitespace-nowrap">
+                                {fname}
+                              </span>
+                            </div>
+                            {fsize && (
+                              <span className="shrink-0 text-xs font-mono text-muted-foreground bg-muted/30 px-2 py-0.5 border border-border">
+                                {fsize}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -785,17 +850,29 @@ export default function SearchView() {
               </Button>
             )}
 
-            {selectedTorrent && (
-              <Button
-                onClick={() => {
-                  if (selectedTorrent) handleAddTorrent(selectedTorrent);
-                  closeDetail();
-                }}
-                className="gap-2 font-bold uppercase flex-1 sm:flex-none"
-              >
-                <Download className="w-4 h-4" /> Download
-              </Button>
-            )}
+            {selectedTorrent && (() => {
+              const detailSize = torrentDetail?.size ?? selectedTorrent?.size ?? "";
+              const isTooLarge = parseSizeToBytes(detailSize) > MAX_TORRENT_BYTES;
+              return isTooLarge ? (
+                <Button
+                  disabled
+                  variant="outline"
+                  className="gap-2 border-2 border-amber-500 text-amber-600 bg-amber-500/10 font-bold uppercase flex-1 sm:flex-none"
+                >
+                  <AlertTriangle className="w-4 h-4" /> Exceeds 90 GB Limit
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    if (selectedTorrent) handleAddTorrent(selectedTorrent);
+                    closeDetail();
+                  }}
+                  className="gap-2 font-bold uppercase flex-1 sm:flex-none"
+                >
+                  <Download className="w-4 h-4" /> Download
+                </Button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>

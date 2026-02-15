@@ -28,6 +28,9 @@ const ALLOWED_INVOKE_CHANNELS = [
   'fs:open-file-dialog', // Open native file picker
   'fs:open-folder-dialog', // Open native folder picker
 
+  // Shell
+  'shell:open-external', // Open URL in external browser
+
   // App
   'app:get-version',     // Get app version
   'app:get-platform',    // Get OS platform

@@ -7,7 +7,7 @@ import { createContext, useContext, useState, useCallback, ReactNode } from 'rea
 
 // ── Route Definitions ────────────────────────────────────────────────────────
 
-export type RouteName = 'home' | 'login' | 'register' | 'profile' | 'search' | 'watch';
+export type RouteName = 'home' | 'login' | 'register' | 'profile' | 'search' | 'watch' | 'downloads';
 
 export interface RouteState {
   name: RouteName;

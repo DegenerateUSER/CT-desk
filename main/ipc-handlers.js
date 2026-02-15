@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 'use strict';
 
-const { dialog, app } = require('electron');
+const { dialog, app, shell } = require('electron');
 const { validateFilePath, validateUrl, validateNumber, validateString } = require('./security/validators');
 
 /**
@@ -123,6 +123,18 @@ function registerIpcHandlers(ipcMain, { libmpvPlayer, getMainWindow }) {
 
   ipcMain.handle('app:get-platform', async () => {
     return process.platform;
+  });
+
+  // ── Shell Handlers ───────────────────────────────────────────────────────
+
+  ipcMain.handle('shell:open-external', async (_event, url) => {
+    validateUrl(url);
+    // Only allow http/https URLs to be opened externally
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('Only http/https URLs can be opened externally');
+    }
+    return shell.openExternal(url);
   });
 }
 

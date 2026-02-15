@@ -9,7 +9,7 @@
 // ── Configuration ────────────────────────────────────────────────────────────
 
 // Remote server URL — from .env (NEXT_PUBLIC_ vars are inlined at build time)
-const REMOTE_SERVER_URL = process.env.NEXT_PUBLIC_REMOTE_SERVER_URL || 'http://localhost:8000';
+const REMOTE_SERVER_URL = process.env.NEXT_PUBLIC_REMOTE_SERVER_URL || 'http://165.232.116.243:8000';
 
 function getServerBaseUrl(): string {
   return REMOTE_SERVER_URL;
@@ -32,6 +32,7 @@ export interface DriveItem {
   modified_time: string | null;
   web_view_link: string | null;
   web_content_link: string | null;
+  thumbnail_link: string | null;
   is_video?: boolean;
   parent_path?: { id: string; name: string }[];
 }
@@ -51,6 +52,7 @@ export interface VideoDetail {
   modified_time: string | null;
   web_view_link: string | null;
   web_content_link: string | null;
+  thumbnail_link: string | null;
 }
 
 export interface UserProfile {
@@ -106,7 +108,7 @@ export interface TorrentDetail {
   imdb?: string;
   num_files?: number;
   completed?: number;
-  files: string[];
+  files: Array<string | { name: string; size: string }>;
 }
 
 export interface ActiveTorrent {
@@ -130,6 +132,8 @@ export interface ActiveTorrent {
   upload_started_at: string | null;
   upload_error: string | null;
   drive_files: string[];
+  added_by: string;
+  added_at: number | null;
 }
 
 // ── Auth helpers ─────────────────────────────────────────────────────────────
@@ -338,6 +342,15 @@ export const activeTorrentsApi = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: 'Retry failed' }));
       throw new Error(err.detail || 'Retry failed');
+    }
+    return res.json();
+  },
+
+  stopTorrent: async (infoHash: string): Promise<{ message: string }> => {
+    const res = await serverFetch(`/torrents/${infoHash}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to stop torrent' }));
+      throw new Error(err.detail || 'Failed to stop torrent');
     }
     return res.json();
   },

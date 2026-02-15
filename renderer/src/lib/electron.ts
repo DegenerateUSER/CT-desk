@@ -121,6 +121,13 @@ export const fs = {
   openFolderDialog: () => electronInvoke<string>('fs:open-folder-dialog'),
 };
 
+// ── Shell convenience wrappers ──────────────────────────────────────────────
+
+export const electronShell = {
+  /** Open a URL in the user's default external browser. */
+  openExternal: (url: string) => electronInvoke('shell:open-external', url),
+};
+
 // ── App convenience wrappers ────────────────────────────────────────────────
 
 export const appInfo = {

@@ -23,6 +23,7 @@ import {
   FileVideo,
   Download,
   LogIn,
+  Activity,
 } from "lucide-react";
 import { useNavigation } from "@/lib/navigation";
 import { useUserAuth } from "@/lib/auth";
@@ -254,6 +255,16 @@ export default function HomeView() {
                 onClick={() => navigate("search")}
               >
                 <Download className="w-4 h-4" />
+              </Button>
+
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10 border-2"
+                title="Active Downloads"
+                onClick={() => navigate("downloads")}
+              >
+                <Activity className="w-4 h-4" />
               </Button>
 
               <Button
@@ -543,6 +554,7 @@ export default function HomeView() {
                           createdTime={file.created_time || undefined}
                           parentPath={file.parent_path}
                           isSearchResult={!!debouncedSearch}
+                          thumbnail={file.thumbnail_link || undefined}
                         />
                       ) : (
                         <Card
