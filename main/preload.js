@@ -24,6 +24,16 @@ const ALLOWED_INVOKE_CHANNELS = [
   'mpv:set-speed',       // Set playback speed
   'mpv:resize',          // Resize render target
 
+  // Telegram direct streaming (zero server bandwidth)
+  'telegram:start-stream', // Start direct Telegram stream → returns local URL
+  'telegram:stop-stream',  // Stop a specific Telegram stream
+
+  // WebTorrent streaming (local torrent → instant video)
+  'torrent:get-files',     // Get list of video files in a torrent
+  'torrent:start-stream',  // Start streaming a torrent file → returns local URL
+  'torrent:stop-stream',   // Stop a torrent stream
+  'torrent:stream-status', // Get status of active streams
+
   // File system (sandboxed)
   'fs:open-file-dialog', // Open native file picker
   'fs:open-folder-dialog', // Open native folder picker
@@ -43,6 +53,7 @@ const ALLOWED_ON_CHANNELS = [
   'mpv:frame',           // Video frame data (libmpv render)
   'mpv:video-reconfig',  // Video dimensions changed
   'app:fullscreen-change', // Window fullscreen state changed
+  'torrent:stream-progress', // WebTorrent download progress
 ];
 
 // ── Exposed API ──────────────────────────────────────────────────────────────

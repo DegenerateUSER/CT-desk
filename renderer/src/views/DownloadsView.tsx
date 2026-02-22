@@ -74,7 +74,7 @@ export default function DownloadsView() {
       try {
         const data = await activeTorrentsApi.list();
         if (!cancelled) {
-          setActiveTorrents(Object.values(data));
+          setActiveTorrents(data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : []);
         }
       } catch {
         // silent
@@ -432,8 +432,14 @@ export default function DownloadsView() {
                           <span className="text-xs text-muted-foreground uppercase font-mono flex items-center gap-1">
                             <Upload className="w-3 h-3" />
                             {formatBytes(t.upload_bytes_done)} /{" "}
-                            {formatBytes(t.upload_bytes_total)} to Drive
+                            {formatBytes(t.upload_bytes_total)} to Telegram
                           </span>
+                          {(t.upload_speed > 0) && (
+                            <span className="flex items-center gap-1 text-xs text-secondary uppercase font-mono">
+                              <ArrowUp className="w-3 h-3" />
+                              {formatBytes(t.upload_speed)}/s
+                            </span>
+                          )}
                           {t.upload_started_at && t.upload_bytes_done > 0 && t.upload_bytes_total > 0 && (
                             <span className="flex items-center gap-1 text-xs text-muted-foreground uppercase font-mono">
                               <Timer className="w-3 h-3 text-secondary" />
@@ -453,7 +459,7 @@ export default function DownloadsView() {
                       )}
                       {isDone && (
                         <span className="flex items-center gap-1 text-xs text-green-600 font-bold uppercase">
-                          <Check className="w-3 h-3" /> Uploaded to Google Drive
+                          <Check className="w-3 h-3" /> Uploaded to Telegram
                         </span>
                       )}
                     </div>

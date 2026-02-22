@@ -121,11 +121,83 @@ export const fs = {
   openFolderDialog: () => electronInvoke<string>('fs:open-folder-dialog'),
 };
 
+// ── Telegram direct streaming ───────────────────────────────────────────────
+
+export interface TelegramStreamResult {
+  url: string;
+  port: number;
+}
+
+export const telegram = {
+  /**
+   * Start a direct Telegram stream (zero server bandwidth).
+   * Returns a local HTTP URL that MPV can load.
+   */
+  startStream: (streamInfo: any) =>
+    electronInvoke<TelegramStreamResult>('telegram:start-stream', streamInfo),
+
+  /** Stop a Telegram stream for a specific video. */
+  stopStream: (videoId: string) =>
+    electronInvoke('telegram:stop-stream', videoId),
+};
+
 // ── Shell convenience wrappers ──────────────────────────────────────────────
 
 export const electronShell = {
   /** Open a URL in the user's default external browser. */
   openExternal: (url: string) => electronInvoke('shell:open-external', url),
+};
+
+// ── Torrent streaming (WebTorrent) convenience wrappers ─────────────────────
+
+export interface TorrentFileInfo {
+  index: number;
+  name: string;
+  path: string;
+  size: number;
+  sizeFormatted: string;
+}
+
+export interface TorrentStreamResult {
+  url: string;
+  port: number;
+  streamId: string;
+  fileName: string;
+  fileSize: number;
+}
+
+export interface TorrentStreamProgress {
+  streamId: string;
+  downloaded: number;
+  total: number;
+  progress: number;
+  downloadSpeed: number;
+  uploadSpeed: number;
+  numPeers: number;
+  timeRemaining: number;
+  fileName: string;
+}
+
+export const torrent = {
+  /** Get list of video files in a torrent (by magnet URI). */
+  getFiles: (magnetUri: string) =>
+    electronInvoke<TorrentFileInfo[]>('torrent:get-files', magnetUri),
+
+  /** Start streaming a torrent file. Returns local HTTP URL for MPV. */
+  startStream: (magnetUri: string, fileIndex?: number) =>
+    electronInvoke<TorrentStreamResult>('torrent:start-stream', magnetUri, fileIndex),
+
+  /** Stop an active torrent stream. */
+  stopStream: (streamId: string) =>
+    electronInvoke('torrent:stop-stream', streamId),
+
+  /** Get status of all active streams. */
+  getStreamStatus: () =>
+    electronInvoke<Record<string, TorrentStreamProgress>>('torrent:stream-status'),
+
+  /** Subscribe to torrent stream progress updates. */
+  onStreamProgress: (cb: (progress: TorrentStreamProgress) => void) =>
+    electronOn('torrent:stream-progress', cb),
 };
 
 // ── App convenience wrappers ────────────────────────────────────────────────

@@ -71,7 +71,12 @@ export default function MpvPlayer({ src, title, isFullscreen = false, isTheater 
   const duration = status?.duration ?? 0;
   const position = status?.position ?? 0;
   const speed = status?.speed ?? 1.0;
-  const tracks = status?.tracks ?? { audio: [], video: [], sub: [] };
+  const rawTracks = status?.tracks ?? { audio: [], video: [], sub: [] };
+  const tracks = {
+    audio: Array.isArray(rawTracks.audio) ? rawTracks.audio : [],
+    video: Array.isArray(rawTracks.video) ? rawTracks.video : [],
+    sub: Array.isArray(rawTracks.sub) ? rawTracks.sub : [],
+  };
   const cacheDuration = status?.cacheDuration ?? 0;
   const bufferedEnd = duration > 0 ? Math.min(position + cacheDuration, duration) : 0;
 

@@ -253,11 +253,18 @@ class LibMpvPlayer extends EventEmitter {
     this._setOption('input-default-bindings', 'no');
     this._setOption('input-vo-keyboard', 'no');
 
-    // Cache settings for streaming
+    // Cache settings for streaming (tuned for Telegram direct streaming)
     this._setOption('cache', 'yes');
-    this._setOption('cache-secs', '30');
-    this._setOption('demuxer-max-bytes', '200MiB');
-    this._setOption('demuxer-max-back-bytes', '100MiB');
+    this._setOption('cache-secs', '30');               // buffer up to 30 s ahead
+    this._setOption('demuxer-max-bytes', '150MiB');    // allow 150 MB demuxer buffer
+    this._setOption('demuxer-max-back-bytes', '50MiB');  // keep 50 MB behind for back-seeking
+    this._setOption('demuxer-readahead-secs', '30');   // read ahead 30 s
+    this._setOption('cache-pause-initial', 'no');      // start playing immediately (don't wait for cache)
+    this._setOption('cache-pause-wait', '5');           // pause only if cache drops below 5 s
+
+    // Network resilience — prevent premature End file on slow connections
+    this._setOption('network-timeout', '120');         // 2 min before giving up on network
+    this._setOption('stream-lavf-o', 'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5');
 
     // Subtitles
     this._setOption('sub-auto', 'fuzzy');

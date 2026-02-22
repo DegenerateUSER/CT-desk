@@ -5,6 +5,10 @@
 
 const { dialog, app, shell } = require('electron');
 const { validateFilePath, validateUrl, validateNumber, validateString } = require('./security/validators');
+const { startTelegramStream, stopStream: stopTelegramStream } = require('./telegram-stream');
+
+// WebTorrent is ESM — load lazily to avoid crashing module export
+const wt = require('./webtorrent-stream');
 
 /**
  * Register all IPC handlers.
@@ -125,6 +129,22 @@ function registerIpcHandlers(ipcMain, { libmpvPlayer, getMainWindow }) {
     return process.platform;
   });
 
+  // ── Telegram Direct Streaming ─────────────────────────────────────────────
+
+  ipcMain.handle('telegram:start-stream', async (_event, streamInfo) => {
+    // streamInfo is the full response from /api/telegram-stream-info/{video_id}
+    if (!streamInfo || !streamInfo.video_id || !streamInfo.bot_token) {
+      throw new Error('Invalid Telegram stream info');
+    }
+    const result = await startTelegramStream(streamInfo);
+    return result; // { url, port }
+  });
+
+  ipcMain.handle('telegram:stop-stream', async (_event, videoId) => {
+    if (typeof videoId !== 'string') throw new Error('videoId must be a string');
+    stopTelegramStream(videoId);
+  });
+
   // ── Shell Handlers ───────────────────────────────────────────────────────
 
   ipcMain.handle('shell:open-external', async (_event, url) => {
@@ -135,6 +155,36 @@ function registerIpcHandlers(ipcMain, { libmpvPlayer, getMainWindow }) {
       throw new Error('Only http/https URLs can be opened externally');
     }
     return shell.openExternal(url);
+  });
+
+  // ── WebTorrent Streaming ───────────────────────────────────────────────
+
+  ipcMain.handle('torrent:get-files', async (_event, magnetUri) => {
+    if (typeof magnetUri !== 'string') throw new Error('magnetUri must be a string');
+    return wt.getTorrentFiles(magnetUri);
+  });
+
+  ipcMain.handle('torrent:start-stream', async (_event, magnetUri, fileIndex) => {
+    if (typeof magnetUri !== 'string') throw new Error('magnetUri must be a string');
+    validateNumber(fileIndex, 'fileIndex', { min: 0 });
+
+    // Set up progress forwarding to the renderer
+    const mainWindow = getMainWindow();
+    const result = await wt.startStream(magnetUri, fileIndex, (progress) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('torrent:stream-progress', progress);
+      }
+    });
+    return result;
+  });
+
+  ipcMain.handle('torrent:stop-stream', async (_event, streamId) => {
+    if (typeof streamId !== 'string') throw new Error('streamId must be a string');
+    wt.stopStream(streamId);
+  });
+
+  ipcMain.handle('torrent:stream-status', async () => {
+    return wt.getStreamStatus();
   });
 }
 

@@ -8,6 +8,8 @@ const path = require('path');
 const { registerIpcHandlers } = require('./ipc-handlers');
 const { LibMpvPlayer } = require('./mpv/libmpv-player');
 const { getResourcePath, isPackaged } = require('./utils/paths');
+const { destroy: destroyTelegramStream } = require('./telegram-stream');
+const { destroy: destroyWebTorrent } = require('./webtorrent-stream');
 
 // ── Globals ──────────────────────────────────────────────────────────────────
 
@@ -103,9 +105,9 @@ function setupCSP() {
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline'",    // Next.js needs inline scripts
             "style-src 'self' 'unsafe-inline'",      // Tailwind injects styles
-            "img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com",
+            "img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://telegra.ph http://165.232.116.243:*",
             "font-src 'self' data:",
-            "connect-src 'self' http://165.232.116.243:* http://127.0.0.1:* https://*",  // API calls to local backend + remote
+            "connect-src 'self' http://localhost:* http://127.0.0.1:* http://165.232.116.243:* https://*",  // API calls + local streams + backend
             "media-src 'self' blob:",                    // Canvas video frames
             "object-src 'none'",
             "frame-src 'none'",
@@ -190,10 +192,12 @@ app.on('window-all-closed', () => {
 });
 
 // Cleanup on quit
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   if (libmpvPlayer) {
     libmpvPlayer.destroy();
   }
+  await destroyTelegramStream();
+  await destroyWebTorrent();
 });
 
 // Prevent multiple instances

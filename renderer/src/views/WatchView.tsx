@@ -6,7 +6,8 @@ import MpvPlayer from "@/components/MpvPlayer";
 import { videoApi } from "@/lib/api";
 import { formatBytes, formatDate, getFileExtension } from "@/lib/utils";
 import { useUserAuth } from "@/lib/auth";
-import { isElectron, mpv, electronShell } from "@/lib/electron";
+import { isElectron, mpv, electronShell, telegram, torrent as torrentApi } from "@/lib/electron";
+import type { TorrentStreamProgress } from "@/lib/electron";
 import {
   ArrowLeft,
   Home,
@@ -19,6 +20,10 @@ import {
   Loader2,
   Film,
   Monitor,
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  Users,
 } from "lucide-react";
 
 // 8bit Components
@@ -51,12 +56,23 @@ interface ExternalUrls {
   direct_token: string | null;
   direct_vlc_cmd: string | null;
   direct_expires_in: number | null;
+  is_telegram?: boolean;
 }
 
 export default function WatchView() {
   const { isAuthenticated, isLoading: authLoading } = useUserAuth();
   const { navigate, goBack } = useNavigation();
   const videoId = useRouteParam("id") || "";
+
+  // ── Torrent streaming mode ──────────────────────────────────────────────
+  const mode = useRouteParam("mode");
+  const isTorrentMode = mode === "torrent";
+  const torrentStreamUrl = useRouteParam("streamUrl") || "";
+  const torrentFileName = useRouteParam("name") || "";
+  const torrentStreamId = useRouteParam("streamId") || "";
+  const torrentFileSize = Number(useRouteParam("fileSize") || 0);
+
+  const [torrentProgress, setTorrentProgress] = useState<TorrentStreamProgress | null>(null);
 
   const [video, setVideo] = useState<VideoDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,13 +106,43 @@ export default function WatchView() {
       const extData = await videoApi.getExternalUrls(vid);
       setExternalUrls(extData.urls);
 
+      // ── Telegram direct stream (Electron only — zero server bandwidth) ──
+      if (extData.urls.is_telegram && isElectron()) {
+        console.log('[WatchView] Telegram file detected, starting direct stream...');
+        try {
+          const streamInfo = await videoApi.getTelegramStreamInfo(vid);
+          console.log('[WatchView] Got stream info, calling telegram.startStream...', {
+            video_id: streamInfo.video_id,
+            has_bot_token: !!streamInfo.bot_token,
+            parts: streamInfo.parts?.length,
+          });
+          const result = await telegram.startStream(streamInfo);
+          console.log('[WatchView] telegram.startStream returned:', JSON.stringify(result));
+          if (result && result.url) {
+            setStreamUrl(result.url);
+            setHttpHeaders([]);
+            setTokenExpiresAt(null);
+            console.log('[WatchView] ✅ Using direct Telegram stream:', result.url);
+            return;
+          } else {
+            console.warn('[WatchView] ⚠️ telegram.startStream returned no URL:', result);
+          }
+        } catch (tgErr: any) {
+          console.error('[WatchView] ❌ Telegram direct stream FAILED:', tgErr?.message || tgErr);
+          console.error('[WatchView] Full error:', tgErr);
+          // Fall through to proxy
+        }
+      } else {
+        console.log('[WatchView] Not telegram (' + extData.urls.is_telegram + ') or not electron (' + isElectron() + ')');
+      }
+
+      // ── Google Drive direct stream (zero bandwidth) ──
       if (extData.urls.direct_url && extData.urls.direct_token) {
-        // Use the direct Google Drive URL (bypasses server bandwidth)
         setStreamUrl(extData.urls.direct_url);
         setHttpHeaders([`Authorization: Bearer ${extData.urls.direct_token}`]);
         const expiresIn = extData.urls.direct_expires_in || 3600;
         setTokenExpiresAt(Date.now() + expiresIn * 1000);
-        console.log('[WatchView] Using direct stream (zero bandwidth)');
+        console.log('[WatchView] Using direct Drive stream (zero bandwidth)');
         return;
       }
     } catch {
@@ -113,9 +159,11 @@ export default function WatchView() {
   /** Called by the player when the token is about to expire. */
   const handleTokenRefresh = async () => {
     if (!videoId) return;
-    const currentPosition = 0; // Will resume from where mpv seeks
     try {
       const extData = await videoApi.getExternalUrls(videoId);
+      // Telegram streams don't expire — no refresh needed
+      if (extData.urls.is_telegram) return;
+
       if (extData.urls.direct_url && extData.urls.direct_token) {
         setStreamUrl(extData.urls.direct_url);
         setHttpHeaders([`Authorization: Bearer ${extData.urls.direct_token}`]);
@@ -137,6 +185,7 @@ export default function WatchView() {
 
   useEffect(() => {
     if (!videoId || !isAuthenticated) return;
+    if (isTorrentMode) return; // skip API fetch in torrent mode
 
     const fetchVideo = async () => {
       try {
@@ -155,6 +204,39 @@ export default function WatchView() {
 
     fetchVideo();
   }, [videoId, isAuthenticated]);
+
+  // ── Torrent mode: set up stream URL + subscribe to progress ────────────
+  useEffect(() => {
+    if (!isTorrentMode || !torrentStreamUrl) return;
+
+    // Set stream URL directly from route params (WebTorrent local HTTP server)
+    setStreamUrl(torrentStreamUrl);
+    setHttpHeaders([]);
+    setTokenExpiresAt(null);
+    setVideo({
+      id: torrentStreamId,
+      name: torrentFileName,
+      mime_type: "video/x-matroska",
+      size: torrentFileSize,
+    });
+    setLoading(false);
+    console.log('[WatchView] Torrent mode — streaming from:', torrentStreamUrl);
+
+    // Subscribe to progress updates
+    const unsub = torrentApi.onStreamProgress((progress: TorrentStreamProgress) => {
+      if (progress.streamId === torrentStreamId) {
+        setTorrentProgress(progress);
+      }
+    });
+
+    // Cleanup: stop torrent stream when leaving
+    return () => {
+      unsub();
+      if (torrentStreamId) {
+        torrentApi.stopStream(torrentStreamId);
+      }
+    };
+  }, [isTorrentMode, torrentStreamUrl, torrentStreamId]);
 
   const copyToClipboard = async (text: string, field: string) => {
     try {
@@ -297,6 +379,44 @@ export default function WatchView() {
 
             {/* Video title & meta — hidden in fullscreen */}
             {!isFullscreen && !isTheater && (<>
+
+            {/* Torrent streaming progress panel */}
+            {isTorrentMode && torrentProgress && (
+              <Card className="border-4 border-secondary shadow-[8px_8px_0_0_var(--secondary)]">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Activity className="w-4 h-4 text-secondary" />
+                    <span className="text-xs font-bold uppercase text-secondary">
+                      Torrent Stream — {Math.round(torrentProgress.progress * 100)}%
+                    </span>
+                  </div>
+                  <div className="w-full h-4 bg-muted/50 border-2 border-border mb-3 overflow-hidden">
+                    <div
+                      className="h-full bg-secondary transition-all duration-500"
+                      style={{ width: `${Math.round(torrentProgress.progress * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs font-mono uppercase text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <ArrowDown className="w-3 h-3 text-primary" />
+                      {formatBytes(torrentProgress.downloadSpeed)}/s
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <ArrowUp className="w-3 h-3 text-secondary" />
+                      {formatBytes(torrentProgress.uploadSpeed)}/s
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {torrentProgress.numPeers} peers
+                    </span>
+                    <span>
+                      {formatBytes(torrentProgress.downloaded)} / {formatBytes(torrentProgress.total)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="border-4 border-primary shadow-[8px_8px_0_0_var(--primary)]">
               <CardContent className="p-4 sm:p-6">
                 <h1 className="text-lg sm:text-xl font-bold uppercase leading-tight mb-4 break-all">
@@ -326,7 +446,8 @@ export default function WatchView() {
               </CardContent>
             </Card>
 
-            {/* Tabs */}
+            {/* Tabs — hidden in torrent mode */}
+            {!isTorrentMode && (
             <div className="space-y-4">
               <div className="flex gap-4 border-b-4 border-border pb-4 overflow-x-auto">
                 <Button
@@ -408,8 +529,7 @@ export default function WatchView() {
                               }
                             }}
                           >
-                            <Globe className="w-4 h-4 mr-2" /> Open in Google
-                            Drive
+                            <Globe className="w-4 h-4 mr-2" /> Open Source
                           </Button>
                         </div>
                       )}
@@ -419,8 +539,7 @@ export default function WatchView() {
                   <Card className="border-2 border-border bg-card">
                     <CardContent className="p-6 space-y-4">
                       <p className="text-xs text-muted-foreground uppercase font-mono">
-                        Streaming via native mpv player with zero-bandwidth
-                        direct Google Drive access. Hardware-accelerated decoding enabled.
+                        Streaming via native mpv player{externalUrls?.is_telegram ? ' with direct Telegram access (zero server bandwidth)' : externalUrls?.direct_token ? ' with zero-bandwidth direct access' : ' via server proxy'}. Hardware-accelerated decoding enabled.
                       </p>
                       {streamUrl && (
                         <div>
@@ -453,6 +572,7 @@ export default function WatchView() {
                 )}
               </div>
             </div>
+            )}
             </>)}
           </div>
 
@@ -481,7 +601,7 @@ export default function WatchView() {
                         }
                       }}
                     >
-                      <Globe className="w-4 h-4 mr-2" /> Open Drive
+                      <Globe className="w-4 h-4 mr-2" /> Open Source
                     </Button>
                   )}
 

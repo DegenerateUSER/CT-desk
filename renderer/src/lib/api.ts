@@ -129,6 +129,7 @@ export interface ActiveTorrent {
   upload_progress: number;
   upload_bytes_done: number;
   upload_bytes_total: number;
+  upload_speed: number;
   upload_started_at: string | null;
   upload_error: string | null;
   drive_files: string[];
@@ -146,6 +147,16 @@ function getToken(): string | null {
 function authHeaders(): Record<string, string> {
   const token = getToken();
   return token ? { ...commonHeaders, Authorization: `Bearer ${token}` } : { ...commonHeaders };
+}
+
+/**
+ * Resolve relative thumbnail URLs to absolute using the server base URL.
+ */
+function resolveThumbnail(item: DriveItem): DriveItem {
+  if (item.thumbnail_link && item.thumbnail_link.startsWith('/')) {
+    return { ...item, thumbnail_link: `${getServerBaseUrl()}${item.thumbnail_link}` };
+  }
+  return item;
 }
 
 /**
@@ -222,14 +233,18 @@ export const videoApi = {
     const qs = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : '';
     const res = await serverFetch(`/api/browse${qs}`);
     if (!res.ok) throw new Error('Failed to browse folder');
-    return res.json();
+    const data: BrowseResponse = await res.json();
+    data.items = Array.isArray(data.items) ? data.items.map(resolveThumbnail) : [];
+    return data;
   },
 
   search: async (query: string): Promise<{ items: DriveItem[] }> => {
     const qs = new URLSearchParams({ q: query });
     const res = await serverFetch(`/api/search?${qs}`);
     if (!res.ok) throw new Error('Failed to search');
-    return res.json();
+    const data: { items: DriveItem[] } = await res.json();
+    data.items = Array.isArray(data.items) ? data.items.map(resolveThumbnail) : [];
+    return data;
   },
 
   listVideos: async (params?: {
@@ -247,13 +262,20 @@ export const videoApi = {
     if (params?.order) qs.set('order', params.order);
     const res = await serverFetch(`/api/videos?${qs}`);
     if (!res.ok) throw new Error('Failed to fetch videos');
-    return res.json();
+    const data = await res.json();
+    if (Array.isArray(data.videos)) data.videos = data.videos.map(resolveThumbnail);
+    if (Array.isArray(data.items)) data.items = data.items.map(resolveThumbnail);
+    return data;
   },
 
   getVideo: async (videoId: string): Promise<VideoDetail> => {
     const res = await serverFetch(`/api/videos/${videoId}`);
     if (!res.ok) throw new Error('Video not found');
-    return res.json();
+    const data: VideoDetail = await res.json();
+    if (data.thumbnail_link && data.thumbnail_link.startsWith('/')) {
+      data.thumbnail_link = `${getServerBaseUrl()}${data.thumbnail_link}`;
+    }
+    return data;
   },
 
   /**
@@ -267,6 +289,16 @@ export const videoApi = {
   getExternalUrls: async (videoId: string) => {
     const res = await serverFetch(`/api/external/${videoId}`);
     if (!res.ok) throw new Error('Failed to get external URLs');
+    return res.json();
+  },
+
+  /**
+   * Get Telegram file metadata for direct streaming (desktop app only).
+   * Returns bot_token, api_id, api_hash, chat_id, message_id, etc.
+   */
+  getTelegramStreamInfo: async (videoId: string) => {
+    const res = await serverFetch(`/api/telegram-stream-info/${videoId}`);
+    if (!res.ok) throw new Error('Not a Telegram file');
     return res.json();
   },
 

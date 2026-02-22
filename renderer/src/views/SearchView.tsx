@@ -11,6 +11,8 @@ import {
   ActiveTorrent,
 } from "@/lib/api";
 import { formatBytes, parseSizeToBytes } from "@/lib/utils";
+import { isElectron, torrent } from "@/lib/electron";
+import type { TorrentFileInfo } from "@/lib/electron";
 import {
   Search,
   Loader2,
@@ -32,6 +34,7 @@ import {
   Activity,
   User,
   Timer,
+  Play,
 } from "lucide-react";
 
 // 8bit Components
@@ -98,6 +101,14 @@ export default function SearchView() {
   const [activeTorrents, setActiveTorrents] = useState<ActiveTorrent[]>([]);
   const [showActiveTorrents, setShowActiveTorrents] = useState(true);
 
+  // ── Torrent streaming state ──────────────────────────────────────────────
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [filePickerOpen, setFilePickerOpen] = useState(false);
+  const [filePickerFiles, setFilePickerFiles] = useState<TorrentFileInfo[]>([]);
+  const [filePickerMagnet, setFilePickerMagnet] = useState("");
+  const [filePickerLoading, setFilePickerLoading] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       navigate("login");
@@ -113,7 +124,7 @@ export default function SearchView() {
       try {
         const data = await activeTorrentsApi.list();
         if (!cancelled) {
-          setActiveTorrents(Object.values(data));
+          setActiveTorrents(data && typeof data === 'object' && !Array.isArray(data) ? Object.values(data) : []);
         }
       } catch {
         // silent
@@ -172,7 +183,7 @@ export default function SearchView() {
           category,
           searchPage
         );
-        setResults(data.results);
+        setResults(Array.isArray(data.results) ? data.results : []);
       } catch (err: any) {
         setError(err.message || "Search failed");
         setResults([]);
@@ -216,6 +227,81 @@ export default function SearchView() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleSearch(1);
+  };
+
+  // ── Torrent stream handler ─────────────────────────────────────────────
+  const handleStreamTorrent = async (t: TorrentSearchResult) => {
+    if (!isElectron()) return;
+    const magnet = t.magnet;
+    if (!magnet) {
+      setStreamError("No magnet link available for this torrent");
+      return;
+    }
+
+    const id = `${t.source}-${t.torrent_id}`;
+    setStreamingId(id);
+    setStreamError(null);
+
+    try {
+      // Step 1: Get video files in torrent
+      const result: any = await torrent.getFiles(magnet);
+      const files: TorrentFileInfo[] = Array.isArray(result) ? result : Array.isArray(result?.files) ? result.files : [];
+      if (files.length === 0) {
+        setStreamError("No video files found in this torrent");
+        setStreamingId(null);
+        return;
+      }
+
+      if (files.length === 1) {
+        // Single video file — stream directly
+        await startStreamAndNavigate(magnet, files[0].index, files[0].name);
+      } else {
+        // Multiple video files — show file picker
+        setFilePickerFiles(files);
+        setFilePickerMagnet(magnet);
+        setFilePickerOpen(true);
+        setStreamingId(null);
+      }
+    } catch (err: any) {
+      setStreamError(err.message || "Failed to fetch torrent files");
+      setStreamingId(null);
+    }
+  };
+
+  const startStreamAndNavigate = async (
+    magnet: string,
+    fileIndex: number,
+    fileName: string
+  ) => {
+    try {
+      const result = await torrent.startStream(magnet, fileIndex);
+      if (!result || !result.url) {
+        setStreamError("Failed to start torrent stream");
+        setStreamingId(null);
+        return;
+      }
+
+      // Navigate to watch view in torrent mode
+      navigate("watch", {
+        mode: "torrent",
+        streamUrl: result.url,
+        name: fileName,
+        streamId: result.streamId,
+        fileSize: String(result.fileSize),
+      });
+    } catch (err: any) {
+      setStreamError(err.message || "Failed to start stream");
+    } finally {
+      setStreamingId(null);
+    }
+  };
+
+  const handleFilePickerSelect = async (file: TorrentFileInfo) => {
+    setFilePickerOpen(false);
+    setFilePickerLoading(true);
+    setStreamingId(`picker-${file.index}`);
+    await startStreamAndNavigate(filePickerMagnet, file.index, file.name);
+    setFilePickerLoading(false);
   };
 
   const sortedResults = [...results].sort((a, b) => {
@@ -684,6 +770,22 @@ export default function SearchView() {
                             {isAdding ? "BUSY" : "GET"}
                           </Button>
                         )}
+                        {isElectron() && torrent.magnet && (
+                          <Button
+                            onClick={() => handleStreamTorrent(torrent)}
+                            disabled={streamingId === id}
+                            variant="secondary"
+                            size="sm"
+                            className="h-8 font-bold uppercase gap-1"
+                          >
+                            {streamingId === id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Play className="w-4 h-4" />
+                            )}
+                            {streamingId === id ? "..." : "STREAM"}
+                          </Button>
+                        )}
                         <Button
                           onClick={() => openDetail(torrent)}
                           variant="ghost"
@@ -801,7 +903,7 @@ export default function SearchView() {
                   </div>
                 )}
 
-                {torrentDetail?.files && torrentDetail.files.length > 0 && (
+                {torrentDetail?.files && Array.isArray(torrentDetail.files) && torrentDetail.files.length > 0 && (
                   <div className="space-y-2">
                     <div className="text-xs font-bold uppercase text-primary border-b-2 border-primary inline-block">
                       Files ({torrentDetail.files.length})
@@ -850,6 +952,19 @@ export default function SearchView() {
               </Button>
             )}
 
+            {isElectron() && (torrentDetail?.magnet || selectedTorrent?.magnet) && (
+              <Button
+                onClick={() => {
+                  if (selectedTorrent) handleStreamTorrent(selectedTorrent);
+                  closeDetail();
+                }}
+                variant="secondary"
+                className="gap-2 font-bold uppercase flex-1 sm:flex-none"
+              >
+                <Play className="w-4 h-4" /> Stream
+              </Button>
+            )}
+
             {selectedTorrent && (() => {
               const detailSize = torrentDetail?.size ?? selectedTorrent?.size ?? "";
               const isTooLarge = parseSizeToBytes(detailSize) > MAX_TORRENT_BYTES;
@@ -873,6 +988,64 @@ export default function SearchView() {
                 </Button>
               );
             })()}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Stream Error Toast */}
+      {streamError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] max-w-md w-full px-4">
+          <div className="p-3 bg-destructive border-4 border-black text-destructive-foreground font-bold uppercase text-xs flex items-center gap-3 shadow-[8px_8px_0_0_rgba(0,0,0,1)]">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span className="flex-1">{streamError}</span>
+            <button onClick={() => setStreamError(null)}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* File Picker Dialog (multi-file torrents) */}
+      <Dialog open={filePickerOpen} onOpenChange={(open) => !open && setFilePickerOpen(false)}>
+        <DialogContent className="max-w-lg w-[90vw] max-h-[80vh] flex flex-col overflow-hidden p-0 gap-0 border-4 border-secondary shadow-[12px_12px_0_0_rgba(0,0,0,0.5)] bg-card">
+          <DialogHeader className="p-5 border-b-4 border-border bg-muted/20">
+            <DialogTitle className="text-base uppercase">
+              <Play className="w-5 h-5 inline mr-2" />
+              Select File to Stream
+            </DialogTitle>
+            <DialogDescription className="text-xs font-mono uppercase text-muted-foreground">
+              {filePickerFiles.length} video file(s) found — pick one to play
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto p-2">
+            {filePickerFiles.map((file) => (
+              <button
+                key={file.index}
+                onClick={() => handleFilePickerSelect(file)}
+                className="w-full text-left p-3 border-2 border-border mb-1 hover:border-secondary hover:bg-secondary/10 transition-colors flex items-center justify-between gap-3 group"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase truncate group-hover:text-secondary transition-colors">
+                    {file.name}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline" className="text-xs font-mono">
+                    {file.sizeFormatted}
+                  </Badge>
+                  <Play className="w-4 h-4 text-muted-foreground group-hover:text-secondary transition-colors" />
+                </div>
+              </button>
+            ))}
+          </div>
+          <DialogFooter className="p-3 border-t-4 border-border bg-muted/20">
+            <Button
+              onClick={() => setFilePickerOpen(false)}
+              variant="outline"
+              className="border-2 font-bold uppercase"
+            >
+              Cancel
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

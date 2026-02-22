@@ -273,8 +273,10 @@ class MpvController extends EventEmitter {
       // Cache settings for streaming
       '--cache=yes',
       '--cache-secs=30',
-      '--demuxer-max-bytes=200MiB',
-      '--demuxer-max-back-bytes=100MiB',
+      '--demuxer-max-bytes=150MiB',
+      '--demuxer-max-back-bytes=50MiB',
+      '--cache-pause-initial=no',
+      '--cache-pause-wait=5',
 
       // Subtitle defaults
       '--sub-auto=fuzzy',

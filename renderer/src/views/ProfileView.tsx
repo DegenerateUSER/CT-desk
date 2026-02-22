@@ -57,8 +57,8 @@ export default function ProfileView() {
     try {
       setLoadingCodes(true);
       const data = await userAuthApi.getReferralCodes();
-      setCodes(data.codes);
-      setMaxCodes(data.max_codes);
+      setCodes(Array.isArray(data.codes) ? data.codes : []);
+      setMaxCodes(data.max_codes ?? 2);
     } catch {
       // ignore
     } finally {
