@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Self-hosted Press Start 2P font ─────────────────────────────────────── */
+@font-face {
+  font-family: "Press Start 2P";
+  src: url("../fonts/PressStart2P-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ── CSS Variables — Dark Gaming Theme ───────────────────────────────────── */
+/* Variables are defined as full CSS color strings so they work directly       */
+/* in arbitrary Tailwind classes such as shadow-[8px_8px_0_0_var(--primary)]. */
+
+:root {
+  --background: hsl(214, 90%, 4%);
+  --foreground: hsl(210, 40%, 96%);
+
+  --card: hsl(215, 80%, 7%);
+  --card-foreground: hsl(210, 40%, 96%);
+
+  --popover: hsl(215, 80%, 7%);
+  --popover-foreground: hsl(210, 40%, 96%);
+
+  --primary: hsl(120, 100%, 50%);
+  --primary-foreground: hsl(214, 90%, 4%);
+
+  --secondary: hsl(215, 25%, 14%);
+  --secondary-foreground: hsl(210, 40%, 96%);
+
+  --muted: hsl(215, 20%, 11%);
+  --muted-foreground: hsl(215, 20%, 65%);
+
+  --accent: hsl(215, 25%, 14%);
+  --accent-foreground: hsl(210, 40%, 96%);
+
+  --destructive: hsl(0, 72%, 51%);
+  --destructive-foreground: hsl(210, 40%, 96%);
+
+  --border: hsl(215, 20%, 22%);
+  --input: hsl(215, 20%, 22%);
+  --ring: hsl(120, 100%, 50%);
+
+  --radius: 0.5rem;
+
+  --chart-1: hsl(120, 100%, 50%);
+  --chart-2: hsl(200, 100%, 55%);
+  --chart-3: hsl(270, 100%, 65%);
+  --chart-4: hsl(40, 100%, 55%);
+  --chart-5: hsl(0, 100%, 60%);
+}
+
+/* ── Base Styles ─────────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Pixel-crisp rendering for retro aesthetic */
+  img {
+    image-rendering: auto;
+  }
+
+  /* Custom scrollbar for dark theme */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--background);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+  }
+}
