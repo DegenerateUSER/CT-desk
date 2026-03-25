@@ -341,7 +341,7 @@ function destroy() {
 
   // Destroy WebTorrent client (but keep downloaded data on disk)
   if (client) {
-    try { client.destroy(); } catch {}
+    try { client.destroy({ destroyStore: false }); } catch {}
     client = null;
   }
   console.log('[WebTorrent] Destroyed');

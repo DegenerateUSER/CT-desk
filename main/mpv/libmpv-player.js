@@ -425,6 +425,10 @@ class LibMpvPlayer extends EventEmitter {
     // Poll at ~60fps for new frames
     this._pollInterval = setInterval(() => {
       try {
+        // Skip rendering when idle (nothing playing) and no recent load
+        const sinceLoad = Date.now() - (this._lastLoadTime || 0);
+        if (!this._playing && sinceLoad > 10000) return;
+
         pollCount++;
         if (pollCount % 1800 === 0) {
           console.log(`[LibMPV] Frame stats: ${frameCount} frames in ${pollCount} polls`);
@@ -787,6 +791,7 @@ class LibMpvPlayer extends EventEmitter {
     ffi.mpv_set_property_string(this._mpv, 'sid', String(trackId));
     // Re-sync track list after a short delay so mpv updates the selected state
     setTimeout(() => {
+      if (!this._initialized) return;
       this._syncTrackList();
       this.emit('status-update', this.getStatus());
     }, 100);
@@ -797,6 +802,7 @@ class LibMpvPlayer extends EventEmitter {
     ffi.mpv_set_property_string(this._mpv, 'aid', String(trackId));
     // Re-sync track list after a short delay so mpv updates the selected state
     setTimeout(() => {
+      if (!this._initialized) return;
       this._syncTrackList();
       this.emit('status-update', this.getStatus());
     }, 100);

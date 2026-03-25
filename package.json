@@ -20,14 +20,14 @@
     "clean": "rm -rf dist renderer/out renderer/.next"
   },
   "dependencies": {
-    "electron-store": "^8.1.0",
+    "big-integer": "^1.6.52",
     "koffi": "^2.15.1",
     "telegram": "^2.26.22",
-    "webtorrent": "^2.8.5"
+    "webtorrent": "^2.8.5",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "electron": "^28.3.3",
-    "electron-builder": "^24.13.3",
-    "ws": "^8.19.0"
+    "electron-builder": "^24.13.3"
   }
 }

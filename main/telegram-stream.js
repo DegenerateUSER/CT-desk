@@ -187,11 +187,17 @@ async function ensureClientPool(creds) {
   // If FloodWait, auto-wait and retry (logs countdown every 30s)
   if (!masterSession) {
     let primary = null;
+    let floodRetries = 0;
+    const MAX_FLOOD_RETRIES = 3;
     while (!primary) {
       try {
         primary = await createClientWithSession(creds, '');
       } catch (err) {
         if (err.seconds && err.errorMessage === 'FLOOD') {
+          floodRetries++;
+          if (floodRetries > MAX_FLOOD_RETRIES) {
+            throw new Error('Too many FloodWait errors (' + floodRetries + '), giving up');
+          }
           const waitSec = err.seconds + 5; // +5s safety margin
           console.log('[TelegramStream] FloodWait: must wait ' + waitSec + 's (' + (waitSec / 60).toFixed(0) + ' min). Auto-retrying...');
           // Wait with countdown logging every 30s
@@ -239,12 +245,13 @@ async function ensureClientPool(creds) {
 }
 
 function getClient(chunkIndex) {
+  if (clientPool.length === 0) return null;
   return clientPool[chunkIndex % clientPool.length];
 }
 
 function getAnyClient() {
   for (const c of clientPool) { if (c && c.connected) return c; }
-  return clientPool[0];
+  return clientPool.length > 0 ? clientPool[0] : null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -644,7 +651,10 @@ function startLocalServer() {
 
           // Back-pressure: respect Node writable buffer
           if (!ok) {
-            await new Promise(r => res.once('drain', r));
+            await new Promise(r => {
+              res.once('drain', r);
+              res.once('close', r);  // unblock if client disconnects
+            });
           }
         }
 
@@ -731,11 +741,9 @@ async function destroy() {
   activeStreams.clear();
   chunkCache.clear();
   if (localServer) { localServer.close(); localServer = null; localPort = null; }
-  for (const c of clientPool) {
-    if (c && c.connected) {
-      try { await c.disconnect(); } catch (e) { /* noop */ }
-    }
-  }
+  await Promise.allSettled(
+    clientPool.filter(c => c && c.connected).map(c => c.disconnect())
+  );
   clientPool = [];
 }
 

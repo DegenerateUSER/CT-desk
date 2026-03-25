@@ -27,9 +27,13 @@ function setupSecurity() {
   // Block navigation to external URLs
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-navigate', (event, url) => {
-      const parsed = new URL(url);
-      // Only allow file: protocol (local pages)
-      if (parsed.protocol !== 'file:') {
+      try {
+        const parsed = new URL(url);
+        // Only allow file: protocol (local pages)
+        if (parsed.protocol !== 'file:') {
+          event.preventDefault();
+        }
+      } catch {
         event.preventDefault();
       }
     });
@@ -85,11 +89,8 @@ function createMainWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    // Cleanup libmpv when window closes
-    if (libmpvPlayer) {
-      libmpvPlayer.destroy();
-      libmpvPlayer = null;
-    }
+    // On macOS, don't destroy libmpvPlayer — window will be recreated on activate.
+    // On other platforms, window close triggers app quit, cleanup happens in before-quit.
   });
 }
 
@@ -105,9 +106,9 @@ function setupCSP() {
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline'",    // Next.js needs inline scripts
             "style-src 'self' 'unsafe-inline'",      // Tailwind injects styles
-            "img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://telegra.ph http://165.232.116.243:*",
+            "img-src 'self' data: blob: https://*.googleusercontent.com https://*.google.com https://telegra.ph http://165.22.245.253:*",
             "font-src 'self' data:",
-            "connect-src 'self' http://localhost:* http://127.0.0.1:* http://165.232.116.243:* https://*",  // API calls + local streams + backend
+            "connect-src 'self' http://localhost:* http://127.0.0.1:* http://165.22.245.253:* https://*",  // API calls + local streams + backend
             "media-src 'self' blob:",                    // Canvas video frames
             "object-src 'none'",
             "frame-src 'none'",
@@ -191,13 +192,17 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Cleanup on quit
-app.on('before-quit', async () => {
+// Cleanup on quit — use will-quit (fires after windows closed, before process exit)
+// Note: Electron does NOT await async before-quit/will-quit handlers.
+// Synchronous cleanup only; Telegram/WebTorrent do best-effort async teardown.
+app.on('will-quit', (event) => {
   if (libmpvPlayer) {
     libmpvPlayer.destroy();
+    libmpvPlayer = null;
   }
-  await destroyTelegramStream();
-  await destroyWebTorrent();
+  // Fire-and-forget async cleanup (process may exit before completion)
+  destroyTelegramStream().catch(() => {});
+  destroyWebTorrent().catch(() => {});
 });
 
 // Prevent multiple instances

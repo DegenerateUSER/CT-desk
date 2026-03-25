@@ -20,6 +20,9 @@ function registerIpcHandlers(ipcMain, { libmpvPlayer, getMainWindow }) {
   // ── MPV Handlers (libmpv embedded rendering) ─────────────────────────────
 
   ipcMain.handle('mpv:load', async (_event, source, options = {}) => {
+    if (typeof source !== 'string' || source.length === 0) {
+      throw new Error('source must be a non-empty string');
+    }
     // source can be a local file path OR an HTTP(S) streaming URL
     if (source.startsWith('http://') || source.startsWith('https://')) {
       validateUrl(source);

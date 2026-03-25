@@ -24,19 +24,18 @@ function validateFilePath(filePath) {
     throw new Error('File path contains null bytes');
   }
 
-  // Block shell metacharacters
-  const dangerousChars = /[;|&`$(){}[\]!<>]/;
+  // Block shell metacharacters (allow brackets/parens — common in media filenames)
+  const dangerousChars = /[;|&`${}!<>]/;
   if (dangerousChars.test(filePath)) {
     throw new Error('File path contains disallowed characters');
   }
 
-  // Normalize and check for path traversal
-  const normalized = path.normalize(filePath);
-  if (normalized.includes('..')) {
+  // Check for path traversal BEFORE normalizing (normalize resolves ".." away)
+  if (filePath.includes('..')) {
     throw new Error('Path traversal detected');
   }
 
-  return normalized;
+  return path.normalize(filePath);
 }
 
 /**

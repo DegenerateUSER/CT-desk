@@ -9,7 +9,7 @@
 // ── Configuration ────────────────────────────────────────────────────────────
 
 // Remote server URL — from .env (NEXT_PUBLIC_ vars are inlined at build time)
-const REMOTE_SERVER_URL = process.env.NEXT_PUBLIC_REMOTE_SERVER_URL || 'http://165.232.116.243:8000';
+const REMOTE_SERVER_URL = process.env.NEXT_PUBLIC_REMOTE_SERVER_URL || 'http://165.22.245.253:8000';
 
 function getServerBaseUrl(): string {
   return REMOTE_SERVER_URL;
